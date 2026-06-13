@@ -1,0 +1,34 @@
+[project]
+name = "soma0sd-rpi-schedule"
+version = "0.2.0"
+description = "라즈베리 파이 4 + Waveshare HDMI 패널 키오스크에서 구글 캘린더를 동기화해 D-Day와 월간 일정을 보여주는 웹뷰 키오스크 앱 (Python HTTP 서버 + chromium --kiosk)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-api-python-client>=2.120",
+    "google-auth-oauthlib>=1.2",
+    "google-auth-httplib2>=0.2",
+    "rich>=13.0",
+    # Windows에는 시스템 tzdb가 없어 zoneinfo가 실패. RPi는 정상이라 마커로 분기.
+    "tzdata>=2024.1; sys_platform == 'win32'",
+]
+
+[project.scripts]
+soma0sd-rpi-schedule = "soma0sd_rpi_schedule.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

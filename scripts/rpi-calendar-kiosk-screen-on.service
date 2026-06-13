@@ -1,0 +1,6 @@
+[Unit]
+Description=Turn on HDMI output (morning wake, 07:00)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -lc 'export XDG_RUNTIME_DIR=/run/user/$(id -u); export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | head -1 | xargs -r basename); /usr/bin/wlr-randr --output HDMI-A-1 --on'

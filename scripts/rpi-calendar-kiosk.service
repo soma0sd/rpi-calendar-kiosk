@@ -1,0 +1,20 @@
+[Unit]
+Description=rpi-calendar-kiosk (Google Calendar/Tasks → chromium --kiosk)
+After=graphical-session.target
+PartOf=graphical-session.target
+# OOM 등 비정상 종료 시 무한 재시작 루프 방지.
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Project/soma0sd_RPi_Schedule
+# Wayland 환경 변수는 graphical-session 환경에서 import 되지만 일부 케이스에서는
+# 비어 있으므로 ExecStart 자체가 다시 채운다. login shell 옵션(-lc) 으로 사용자
+# 프로필도 로드해 PATH 에 ~/.local/bin (uv) 가 포함되도록 한다.
+ExecStart=/bin/bash -lc 'export XDG_RUNTIME_DIR=/run/user/$(id -u); export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | head -1 | xargs -r basename); exec "$HOME/.local/bin/uv" run --directory "$HOME/Project/soma0sd_RPi_Schedule" python -m soma0sd_rpi_schedule --kiosk'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

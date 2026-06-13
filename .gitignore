@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# 가상환경
+.venv
+
+# 테스트/린트 캐시
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 로컬 실행 시 생성되는 이벤트 캐시 (Windows 한정 — RPi 는 ~/.cache 사용)
+.cache/
+
+# Qt 빌드 캐시
+*.qmlc
+*.jsc
+
+# IDE
+.idea/
+.vscode/
+.claude/
+
+# Claude 프로젝트 지침 (로컬 전용 — 공개 저장소 제외)
+CLAUDE.md
+
+# OS
+Thumbs.db
+.DS_Store
+
+# 구글 OAuth 자격증명 — 절대 커밋 금지
+secrets/
+*.credentials.json
+*.token.json
+credentials.json
+token.json

@@ -1,0 +1,181 @@
+/* 다크 키오스크 팔레트. 모든 크기는 vmin/vw/vh 비율 — 어떤 해상도/방향이든 자동 적응. */
+:root {
+  --bg: #1e1e2e;
+  --surface: #2a2a3e;
+  --today: #324054;
+  --fg: #e0e0e0;
+  --muted: #888899;
+  --dday: #fab387;
+  --today-fg: #89dceb;
+  --indicator: #a6e3a1;
+  --warning: #f9e2af;
+  --error: #f38ba8;
+  --holiday: #f38ba8;
+  --saturday: #74c7ec;
+  --task: #cba6f7;  /* 할일 액센트(보라) — 일정(초록 --indicator)과 구분 */
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg); color: var(--fg);
+  font-family: "Noto Sans CJK KR", "Noto Sans KR", "Sans", sans-serif;
+  overflow: hidden;
+  cursor: none; /* 키오스크: 마우스 포인터 숨김 */
+  user-select: none;
+}
+/* 번인 완화: 화면을 매우 천천히 1~2px 범위에서 시프트. 사용자 미인지 수준이지만
+   장시간 정적 픽셀 자극을 분산. will-change 로 GPU compositor layer 분리. */
+@keyframes burn-in-shift {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(2px, 0); }
+  50%  { transform: translate(2px, 2px); }
+  75%  { transform: translate(0, 2px); }
+  100% { transform: translate(0, 0); }
+}
+body {
+  display: flex; flex-direction: column;
+  animation: burn-in-shift 1200s linear infinite;
+  will-change: transform;
+}
+
+.banner {
+  background: var(--warning); color: var(--bg);
+  padding: 0.6vmin 1.2vmin;
+  font-size: clamp(12px, 2vmin, 18px);
+  text-align: center; line-height: 1.3;
+}
+.banner.error { background: var(--error); }
+
+/* 기본은 가로 분할. 좌측(일정+D-Day)이 2, 우측(달력)이 1 비율. */
+#root {
+  flex: 1; display: grid; grid-template-columns: 2fr 1fr;
+  min-height: 0;
+}
+@media (orientation: portrait) {
+  #root { grid-template-columns: 1fr; grid-template-rows: 2fr 1fr; }
+}
+
+.pane { padding: 1vmin; min-width: 0; min-height: 0; overflow: hidden;
+        display: flex; flex-direction: column; gap: 1vmin; }
+/* 좌측 패널은 일정·할일 통합 목록만 담는다 — 행 사이 여백을 약간 키운다. */
+#left { gap: 2vmin; }
+
+.event-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+              gap: 2vmin; padding-right: 0.5vmin; }  /* 일정 행 사이 간격 (사용자 요청) */
+.event-list::-webkit-scrollbar { width: 1.5vmin; }
+.event-list::-webkit-scrollbar-thumb { background: var(--surface); border-radius: 1vmin; }
+
+/* 좌: 본문(summary/when/loc), 우: D-Day 강조 배지 */
+.event-row {
+  background: var(--surface); border-radius: 1vmin;
+  padding: 1.2vmin 1.5vmin;
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 1vmin; align-items: center;
+}
+.event-row .main { display: flex; flex-direction: column; gap: 0.4vmin; min-width: 0; }
+/* 제목 줄: 타입 배지(일정/할일) + 제목. 배지는 고정폭, 제목은 남는 폭에서 ellipsis. */
+.event-row .summary-row { display: flex; align-items: center; gap: 0.8vmin; min-width: 0; }
+/* 일정 리스트 폰트는 기존 기준 대비 1.5배 (사용자 요청). */
+.event-row .summary { flex: 0 1 auto; min-width: 0;
+                      font-size: clamp(21px, 3.75vmin, 39px); font-weight: 600;
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 일정/할일 구분 pill. 색은 일정=초록(--indicator), 할일=보라(--task). */
+.type-pill { flex: none; display: inline-block; line-height: 1;
+             font-size: clamp(13px, 2.1vmin, 22px); font-weight: 700;
+             padding: 0.3vmin 0.9vmin; border-radius: 0.6vmin; }
+.type-event { background: rgba(166, 227, 161, 0.18); color: var(--indicator); }
+.type-task  { background: rgba(203, 166, 247, 0.20); color: var(--task); }
+.event-row .when { font-size: clamp(17px, 2.85vmin, 27px); color: var(--muted); }
+.event-row .loc { font-size: clamp(15px, 2.4vmin, 24px); color: var(--muted);
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-row .dday-badge {
+  font-size: clamp(24px, 5.25vmin, 57px);
+  font-weight: 700; line-height: 1;
+  color: var(--dday); letter-spacing: -0.02em;
+  text-align: right; min-width: 8vmin;
+}
+/* D-1/D-0 구간의 timed 이벤트는 "오늘\n14:00" 두 줄. 텍스트가 더 길어지므로 폰트 축소.
+   white-space: pre-line 이 \n 을 살려 두 줄로 렌더링. */
+.event-row .dday-badge.with-time {
+  font-size: clamp(18px, 3.6vmin, 38px);
+  white-space: pre-line; line-height: 1.1;
+}
+.event-row.is-today .dday-badge { color: var(--today-fg); }
+.event-row.is-past  .dday-badge { color: var(--muted); }
+/* 좌측 색 액센트 — box-shadow inset 으로 그려 grid 폭 변동 없음(border-left 는 밀림). */
+.event-row.is-event { box-shadow: inset 0.8vmin 0 0 var(--indicator); }
+.event-row.is-task  { box-shadow: inset 0.8vmin 0 0 var(--task); }
+/* 마감 없는 할일: D-Day 배지 자리에 '—' 회색. */
+.event-row .dday-badge.is-undated { color: var(--muted); }
+
+.empty { color: var(--muted); text-align: center; margin-top: 2vmin;
+         font-size: clamp(14px, 2vmin, 20px); }
+
+#month-header {
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 1vmin;
+}
+.nav {
+  width: 8vmin; height: 8vmin; min-width: 38px; min-height: 38px;
+  background: var(--surface); color: var(--fg);
+  border: none; border-radius: 1vmin;
+  font-size: clamp(20px, 4vmin, 40px); line-height: 1;
+  cursor: pointer; touch-action: manipulation;
+}
+.nav:active { background: var(--today); }
+#month-title {
+  text-align: center; font-size: clamp(14px, 2.6vmin, 28px); font-weight: 700;
+}
+#weekdays {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  color: var(--muted); margin: 0.5vmin 0;
+  font-size: clamp(11px, 1.9vmin, 18px);
+}
+#weekdays span { text-align: center; }
+#weekdays span:nth-child(6) { color: var(--saturday); }
+#weekdays span:nth-child(7) { color: var(--holiday); }
+
+#month-grid {
+  flex: 1; display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  gap: 2px; min-height: 0;
+}
+.cell {
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1.2vmin; padding: 0.3vmin; min-height: 0; min-width: 0;
+}
+.cell .num { font-size: clamp(12px, 2.2vmin, 24px); line-height: 1; }
+/* CSS cascade 순서로 우선순위 결정: 같은 특이성(class 2개)이라 뒤에 정의된 규칙이 이김.
+   토/일/공휴일 → outside(muted) → today(강조) 순으로 두어 today 가 최우선. */
+.cell.saturday .num { color: var(--saturday); }
+.cell.sunday   .num { color: var(--holiday); }
+.cell.holiday  .num { color: var(--holiday); font-weight: 700; }
+.cell.outside  .num { color: var(--muted); opacity: 0.55; }
+.cell.today { background: var(--today); border-radius: 1vmin; }
+.cell.today .num { color: var(--today-fg); font-weight: 700; }
+
+/* 한 셀 안에서 일정(초록) 그룹과 할일(보라) 그룹을 한 줄에 나란히. */
+.indicators { display: flex; gap: 0.6vmin; align-items: center;
+              flex-wrap: wrap; justify-content: center; }
+.dots { display: flex; gap: 0.4vmin; align-items: center; }
+.dot { width: 0.9vmin; height: 0.9vmin; min-width: 5px; min-height: 5px;
+       background: var(--indicator); border-radius: 50%; }
+.dot.dot-task { background: var(--task); }
+.badge {
+  background: var(--indicator); color: var(--bg);
+  font-size: clamp(10px, 1.6vmin, 14px); font-weight: 700;
+  padding: 0.2vmin 0.7vmin; border-radius: 1em;
+}
+.badge.badge-task { background: var(--task); }
+.holiday-name {
+  font-size: clamp(8px, 1.4vmin, 12px);
+  color: var(--holiday);
+  background: rgba(243, 139, 168, 0.15);
+  padding: 0.1vmin 0.6vmin;
+  border-radius: 0.6vmin;
+  max-width: 95%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  line-height: 1.15;
+}

@@ -1,0 +1,8 @@
+[Unit]
+Description=Turn off HDMI output (kiosk burn-in mitigation, 23:00)
+
+[Service]
+Type=oneshot
+# WAYLAND_DISPLAY 는 user session 환경에서 import 되지만 일부 케이스에서 비어있을 수 있으므로
+# rpi-calendar-kiosk.service 와 동일한 방식으로 ExecStart 가 직접 채운다.
+ExecStart=/bin/bash -lc 'export XDG_RUNTIME_DIR=/run/user/$(id -u); export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | head -1 | xargs -r basename); /usr/bin/wlr-randr --output HDMI-A-1 --off'

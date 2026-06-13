@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule nightly HDMI off at 23:00
+
+[Timer]
+OnCalendar=*-*-* 23:00:00
+# Persistent=false: 부팅 시 missed schedule 즉시 트리거 방지
+# (예: 06:00 부팅 직후 23:00 off 가 실행되어 화면이 꺼지는 사고 방지).
+Persistent=false
+
+[Install]
+WantedBy=timers.target

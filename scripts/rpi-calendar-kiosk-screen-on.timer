@@ -1,0 +1,9 @@
+[Unit]
+Description=Schedule morning HDMI on at 07:00
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target
