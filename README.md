@@ -1,5 +1,9 @@
 # rpi-calendar-kiosk
 
+> [!CAUTION]
+> **[ARCHIVED / 아카이브됨 - 2026-07-30]**
+> 본 프로젝트(`soma0sd_RPi_Schedule` / `rpi-calendar-kiosk`)는 2026년 7월 30일 자로 완결되어 **아카이빙** 처리되었습니다. 주요 기능 구현 및 검증이 완료되었으며, 향후 참조 및 보관용 상태로 유지됩니다.
+
 라즈베리 파이 4 + Waveshare HDMI 패널 키오스크에서 **구글 캘린더**를 동기화해 D-Day와 월간 일정을 보여주는 **웹뷰 키오스크** 앱 (Python stdlib HTTP 서버 + chromium --kiosk).
 
 - 좌측(약 ⅔): 가장 가까운 일정의 **D-Day** + 향후 일정 목록 (스크롤)
