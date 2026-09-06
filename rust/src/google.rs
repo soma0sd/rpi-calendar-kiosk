@@ -329,10 +329,7 @@ async fn save_token_document(path: &Path, document: &Value) -> Result<()> {
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
+    options.mode(0o600);
     let mut file = options
         .open(&temporary)
         .await
