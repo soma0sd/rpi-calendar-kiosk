@@ -26,7 +26,7 @@ class _StubService:
     def events(self):
         return self
 
-    def list(self, **kwargs):  # noqa: A002 — Google API 시그니처 따름
+    def list(self, **kwargs):  # noqa: A002, Google API 시그니처 따름
         self._last_kwargs = kwargs
         return self
 

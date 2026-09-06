@@ -18,7 +18,7 @@ class _Paginator:
         self._pages = list(pages)
         self.last_kwargs: dict | None = None
 
-    def list(self, **kwargs):  # noqa: A002 — Google API 시그니처 따름
+    def list(self, **kwargs):  # noqa: A002, Google API 시그니처 따름
         self.last_kwargs = kwargs
         return self
 

@@ -1,13 +1,14 @@
 [project]
 name = "soma0sd-rpi-schedule"
-version = "0.2.0"
-description = "라즈베리 파이 4 + Waveshare HDMI 패널 키오스크에서 구글 캘린더를 동기화해 D-Day와 월간 일정을 보여주는 웹뷰 키오스크 앱 (Python HTTP 서버 + chromium --kiosk)"
+version = "0.4.0"
+description = "Windows PC 시스템 지표와 구글 캘린더 일정을 표시하는 Raspberry Pi 웹 키오스크"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "google-api-python-client>=2.120",
     "google-auth-oauthlib>=1.2",
     "google-auth-httplib2>=0.2",
+    "psutil>=6.1",
     "rich>=13.0",
     # Windows에는 시스템 tzdb가 없어 zoneinfo가 실패. RPi는 정상이라 마커로 분기.
     "tzdata>=2024.1; sys_platform == 'win32'",

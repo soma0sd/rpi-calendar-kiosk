@@ -14,8 +14,10 @@ wheels/
 .ruff_cache/
 .mypy_cache/
 
-# 로컬 실행 시 생성되는 이벤트 캐시 (Windows 한정 — RPi 는 ~/.cache 사용)
+# 로컬 실행 시 생성되는 이벤트 캐시 (Windows 한정, RPi 는 ~/.cache 사용)
 .cache/
+.runtime/
+target/
 
 # Qt 빌드 캐시
 *.qmlc
@@ -26,14 +28,14 @@ wheels/
 .vscode/
 .claude/
 
-# Claude 프로젝트 지침 (로컬 전용 — 공개 저장소 제외)
+# Claude 프로젝트 지침 (로컬 전용, 공개 저장소 제외)
 CLAUDE.md
 
 # OS
 Thumbs.db
 .DS_Store
 
-# 구글 OAuth 자격증명 — 절대 커밋 금지
+# 구글 OAuth 자격증명: 절대 커밋 금지
 secrets/
 *.credentials.json
 *.token.json

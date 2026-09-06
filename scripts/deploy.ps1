@@ -1,29 +1,34 @@
-# Windows OpenSSH의 scp로 RPi에 동기화하고 원격 uv sync까지 실행.
-# secrets/credentials.json, secrets/token.json은 의도적으로 전송 목록에 포함하지 않는다.
+# Copy the Rust runtime sources to the Raspberry Pi and build a locked release binary.
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 . (Join-Path $PSScriptRoot "_ssh_config.ps1")
 
-$remote = "1.66-RPi4-Display"
+$remote = $RpiHost
 $remoteDir = "~/Project/soma0sd_RPi_Schedule"
 
 Write-Host "Local : $root"
 Write-Host "Target: ${remote}:$remoteDir/"
 
-# 동기화 대상 디렉토리는 매번 새로 (rsync --delete 모방).
-ssh @SshArgs $remote "mkdir -p $remoteDir && rm -rf $remoteDir/src $remoteDir/tests $remoteDir/scripts"
-if ($LASTEXITCODE -ne 0) { throw "원격 디렉토리 준비 실패 (exit $LASTEXITCODE)" }
+ssh @SshArgs $remote "mkdir -p $remoteDir"
+if ($LASTEXITCODE -ne 0) { throw "remote directory preparation failed (exit $LASTEXITCODE)" }
 
-$dirs = @("src", "tests", "scripts")
-$files = @("pyproject.toml", "uv.lock", "README.md", ".gitignore", ".python-version")
+$directories = @("rust", "web", "scripts")
+$files = @("Cargo.toml", "Cargo.lock", "README.md", ".gitignore")
+scp @SshArgs -r -p @directories @files "${remote}:$remoteDir/"
+if ($LASTEXITCODE -ne 0) { throw "source transfer failed (exit $LASTEXITCODE)" }
 
-scp @SshArgs -r -p @dirs @files "${remote}:$remoteDir/"
-if ($LASTEXITCODE -ne 0) { throw "scp 전송 실패 (exit $LASTEXITCODE)" }
+ssh @SshArgs $remote "cd $remoteDir && bash scripts/bootstrap_rust.sh"
+if ($LASTEXITCODE -ne 0) { throw "Rust toolchain bootstrap failed (exit $LASTEXITCODE)" }
 
-# RPi에 uv가 없으면 설치 후 sync.
-ssh @SshArgs $remote 'export PATH=$HOME/.local/bin:$PATH; (command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh) && cd ~/Project/soma0sd_RPi_Schedule && $HOME/.local/bin/uv sync'
-if ($LASTEXITCODE -ne 0) { throw "원격 uv sync 실패 (exit $LASTEXITCODE)" }
+ssh @SshArgs $remote 'cd ~/Project/soma0sd_RPi_Schedule && "$HOME/.cargo/bin/cargo" build --locked --release --bin rpi-schedule-kiosk'
+if ($LASTEXITCODE -ne 0) { throw "remote Rust release build failed (exit $LASTEXITCODE)" }
 
-Write-Host "배포 완료"
+ssh @SshArgs $remote 'cd ~/Project/soma0sd_RPi_Schedule && install -d "$HOME/.local/bin" && install -m 755 target/release/rpi-schedule-kiosk "$HOME/.local/bin/rpi-schedule-kiosk.next" && mv -f "$HOME/.local/bin/rpi-schedule-kiosk.next" "$HOME/.local/bin/rpi-schedule-kiosk"'
+if ($LASTEXITCODE -ne 0) { throw "remote Rust binary install failed (exit $LASTEXITCODE)" }
+
+ssh @SshArgs $remote 'sha256sum "$HOME/.local/bin/rpi-schedule-kiosk" && "$HOME/.local/bin/rpi-schedule-kiosk" --version'
+if ($LASTEXITCODE -ne 0) { throw "remote Rust binary verification failed (exit $LASTEXITCODE)" }
+
+Write-Host "Rust deployment build complete"

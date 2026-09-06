@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,8 +32,14 @@ def main(argv: list[str] | None = None) -> int:
                       help="HTTP 서버만 시작 (브라우저는 별도로 띄운다)")
     mode.add_argument("--kiosk", action="store_true",
                       help="HTTP 서버 + chromium --kiosk 동시 실행 (기본)")
+    mode.add_argument("--push-monitor", action="store_true",
+                      help="이 PC의 시스템 지표를 Raspberry Pi로 주기 전송")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--monitor-target", default=os.environ.get("SOMA0SD_MONITOR_TARGET", ""))
+    parser.add_argument("--monitor-token-file", default="")
+    parser.add_argument("--monitor-interval", type=float, default=2.0)
+    parser.add_argument("--monitor-once", action="store_true")
     args = parser.parse_args(argv)
 
     if args.print_resolution:
@@ -43,6 +50,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.auth:
         return _run_auth()
+
+    if args.push_monitor:
+        return _run_monitor_pusher(
+            args.monitor_target,
+            args.monitor_token_file,
+            args.monitor_interval,
+            args.monitor_once,
+        )
 
     if not _token_present():
         _print_initial_auth_help()
@@ -92,21 +107,59 @@ def _run_serve(host: str, port: int) -> int:
     return 0
 
 
+def _run_monitor_pusher(
+    target: str,
+    token_file: str,
+    interval_sec: float,
+    once: bool,
+) -> int:
+    from .config import monitor_token_path
+    from .monitor import run_monitor_pusher
+
+    path = monitor_token_path() if not token_file else Path(token_file)
+    try:
+        token = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        print(f"[system-monitor] token read failed: {exc}", file=sys.stderr)
+        return 3
+    if not target:
+        print("[system-monitor] --monitor-target is required", file=sys.stderr)
+        return 3
+    try:
+        return run_monitor_pusher(
+            target,
+            token,
+            interval_sec=interval_sec,
+            once=once,
+        )
+    except ValueError as exc:
+        print(f"[system-monitor] {exc}", file=sys.stderr)
+        return 3
+
+
 def _run_kiosk(host: str, port: int) -> int:
+    from .monitor import SystemMonitorState
     from .server import CalendarState, serve, start_sync_thread
 
     state = CalendarState()
+    monitor_state = SystemMonitorState()
     start_sync_thread(state)
 
     server_thread = threading.Thread(
-        target=lambda: serve(host=host, port=port, state=state),
+        target=lambda: serve(
+            host=host,
+            port=port,
+            state=state,
+            monitor_state=monitor_state,
+        ),
         name="http-server",
         daemon=True,
     )
     server_thread.start()
     time.sleep(0.5)
 
-    url = f"http://{host}:{port}"
+    browser_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    url = f"http://{browser_host}:{port}"
     chromium = _find_chromium()
     if chromium is None:
         print("[soma0sd-rpi-schedule] chromium 실행 파일을 찾지 못했다. --serve로 폴백.", file=sys.stderr)

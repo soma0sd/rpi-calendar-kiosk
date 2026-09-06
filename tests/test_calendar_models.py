@@ -1,4 +1,4 @@
-"""CalendarEvent.from_api_dict — all-day vs timed, 누락 필드, JSON 라운드트립."""
+"""CalendarEvent.from_api_dict: all-day vs timed, 누락 필드, JSON 라운드트립."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ def test_json_round_trip_preserves_is_holiday() -> None:
 
 
 def test_task_from_api_parses_due_date_only() -> None:
-    # due 는 RFC3339(자정 UTC) — 날짜부분만 슬라이스, 타임존 보정 없음.
+    # due 는 RFC3339(자정 UTC): 날짜부분만 슬라이스, 타임존 보정 없음.
     raw = {"id": "t1", "title": "보고서 제출", "status": "needsAction",
            "due": "2026-06-15T00:00:00.000Z", "notes": "초안"}
     t = Task.from_api_dict(raw)
@@ -170,7 +170,7 @@ def test_task_from_api_without_due_is_none() -> None:
 
 
 def test_task_from_api_malformed_due_is_none() -> None:
-    # 10자 미만/형식 이상이면 None — 크래시 없음.
+    # 10자 미만/형식 이상이면 None: 크래시 없음.
     assert Task.from_api_dict({"id": "t3", "title": "x", "due": "2026"}).due_date is None
     assert Task.from_api_dict({"id": "t4", "title": "y", "due": None}).due_date is None
 

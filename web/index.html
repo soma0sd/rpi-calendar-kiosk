@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no" class="notranslate" data-runtime="rust">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<!-- chromium 번역 풍선 차단: HTML notranslate + google meta. 정책·Preferences 와 함께 다층 방어. -->
+<meta name="google" content="notranslate">
+<meta http-equiv="Content-Language" content="ko">
+<title>soma0sd_RPi_Schedule</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="notranslate">
+<div id="banner" class="banner" hidden></div>
+<main id="root">
+  <section id="system-monitor" class="pane" aria-label="PC 시스템 모니터">
+    <header class="pane-header">
+      <div>
+        <h1>시스템 모니터</h1>
+        <div id="monitor-host" class="pane-subtitle">PC 연결 대기</div>
+      </div>
+      <span id="monitor-status" class="status-pill offline">OFFLINE</span>
+    </header>
+    <div id="monitor-devices" class="monitor-devices" aria-live="polite"></div>
+    <footer class="monitor-footer">
+      <span id="monitor-network">↓ 0.00 · ↑ 0.00 Mbps</span>
+      <span id="monitor-updated">업데이트 대기</span>
+    </footer>
+    <button id="monitor-next" class="monitor-next" type="button" disabled>
+      <span id="monitor-position">장비 0/0</span>
+      <strong id="monitor-next-label">다음 장비 없음</strong>
+    </button>
+  </section>
+
+  <section id="schedule" class="pane workspace-pane" aria-label="일정 목록">
+    <header class="schedule-header">
+      <div id="date-heading" class="date-heading">
+        <strong id="today-date">오늘</strong>
+      </div>
+    </header>
+    <div id="event-list" class="event-list"></div>
+    <button id="calendar-open" class="view-switch" type="button" aria-label="달력 보기">›</button>
+  </section>
+
+  <section id="calendar" class="pane workspace-pane workspace-overlay" aria-label="달력" aria-hidden="true" hidden>
+    <div id="month-header">
+      <button id="prev" class="nav" aria-label="이전 달">‹</button>
+      <h2 id="month-title">…</h2>
+      <button id="next" class="nav" aria-label="다음 달">›</button>
+    </div>
+    <div id="weekdays">
+      <span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>일</span>
+    </div>
+    <div id="month-grid"></div>
+    <button id="calendar-close" class="view-switch" type="button" aria-label="일정 보기">‹</button>
+  </section>
+
+  <section id="event-detail" class="workspace-pane workspace-overlay detail-overlay" role="dialog" aria-modal="true" aria-labelledby="detail-title" hidden>
+    <div class="detail-panel">
+      <button id="detail-close" class="detail-close" type="button" aria-label="일정 상세 닫기">닫기</button>
+      <div class="detail-scroll">
+        <div class="detail-type">일정 상세</div>
+        <h2 id="detail-title">일정</h2>
+        <dl class="detail-fields">
+          <div><dt>일시</dt><dd id="detail-when"></dd></div>
+          <div id="detail-location-row"><dt>장소</dt><dd id="detail-location"></dd></div>
+        </dl>
+        <div id="detail-description" class="detail-description"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js" defer></script>
+</body>
+</html>

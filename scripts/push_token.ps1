@@ -6,7 +6,7 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 . (Join-Path $PSScriptRoot "_ssh_config.ps1")
 
-$remote = "1.66-RPi4-Display"
+$remote = $RpiHost
 $localToken = Join-Path $root "secrets\token.json"
 $remoteDir = "~/.config/soma0sd_rpi_schedule"
 $remoteToken = "$remoteDir/token.json"

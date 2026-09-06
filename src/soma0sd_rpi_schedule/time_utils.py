@@ -74,8 +74,8 @@ def format_time_range(start: datetime, end: datetime, *, all_day: bool) -> str:
     s = start.astimezone(KST)
     e = end.astimezone(KST)
     if s.date() == e.date():
-        return f"{s:%H:%M}–{e:%H:%M}"
-    return f"{s:%m/%d %H:%M}–{e:%m/%d %H:%M}"
+        return f"{s:%H:%M} - {e:%H:%M}"
+    return f"{s:%m/%d %H:%M} - {e:%m/%d %H:%M}"
 
 
 def month_range(year: int, month: int) -> tuple[datetime, datetime]:

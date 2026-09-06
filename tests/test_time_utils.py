@@ -73,7 +73,7 @@ def test_format_time_range_all_day_label() -> None:
 def test_format_time_range_timed_same_day() -> None:
     s = datetime(2026, 5, 12, 9, 0, tzinfo=KST)
     e = datetime(2026, 5, 12, 10, 30, tzinfo=KST)
-    assert format_time_range(s, e, all_day=False) == "09:00–10:30"
+    assert format_time_range(s, e, all_day=False) == "09:00 - 10:30"
 
 
 def test_format_time_range_crosses_midnight() -> None:

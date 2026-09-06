@@ -1,10 +1,25 @@
-# SSH config 경로 해석 헬퍼. dot-source 로 호출자 스코프에 $SshArgs 를 노출.
-# 우선순위: $env:SOMA0SD_SSH_CONFIG  →  기본(-F 미사용, ssh 가 ~/.ssh/config 사용).
-# Why: 별칭 "1.66-RPi4-Display" 가 표준 ~/.ssh/config 가 아닌 외부 ssh config 에 정의돼 있다면,
-#      $env:SOMA0SD_SSH_CONFIG 에 그 config 경로를 지정해야 ssh/scp 가 호스트명을 해석한다.
-#      (표준 위치에 별칭이 있으면 환경변수 없이도 동작한다.)
+# 배포 대상 해석 헬퍼. dot-source 로 호출자 스코프에 $SshArgs·$RpiHost·$WindowsHost·$MonitorTarget 을 노출.
+# 우선순위: 환경 변수  →  로컬 비추적 설정(.claude/deploy-local.ps1)  →  공개 기본값(플레이스홀더).
+# Why: 실제 호스트 별칭과 사설 IP 는 공개 저장소에 남기지 않는다. 각자 환경에 맞는 값은
+#      아래 환경 변수로 지정하거나 .claude/deploy-local.ps1 (git 비추적) 에 적어 둔다.
+#        $env:SOMA0SD_SSH_CONFIG     별칭이 정의된 ssh config 경로 (표준 ~/.ssh/config 면 불필요)
+#        $env:SOMA0SD_RPI_HOST       라즈베리 파이 ssh 별칭 또는 user@host
+#        $env:SOMA0SD_WINDOWS_HOST   지표 송신기를 설치할 Windows PC 의 ssh 별칭
+#        $env:SOMA0SD_MONITOR_TARGET 지표 수신 URL (http://<rpi>:8765/api/system)
 
 $SshArgs = @()
-if ($env:SOMA0SD_SSH_CONFIG) {
-    $SshArgs = @("-F", $env:SOMA0SD_SSH_CONFIG)
-}
+
+# 1) 로컬 비추적 설정을 먼저 반영한다 (.claude/ 는 .gitignore 대상).
+$localOverride = Join-Path (Split-Path -Parent $PSScriptRoot) ".claude/deploy-local.ps1"
+if (Test-Path -LiteralPath $localOverride) { . $localOverride }
+
+# 2) 환경 변수가 있으면 최종 우선한다.
+if ($env:SOMA0SD_SSH_CONFIG) { $SshArgs = @("-F", $env:SOMA0SD_SSH_CONFIG) }
+if ($env:SOMA0SD_RPI_HOST) { $RpiHost = $env:SOMA0SD_RPI_HOST }
+if ($env:SOMA0SD_WINDOWS_HOST) { $WindowsHost = $env:SOMA0SD_WINDOWS_HOST }
+if ($env:SOMA0SD_MONITOR_TARGET) { $MonitorTarget = $env:SOMA0SD_MONITOR_TARGET }
+
+# 3) 남은 값은 공개 기본값으로 채운다.
+if (-not $RpiHost) { $RpiHost = "rpi-calendar-kiosk" }
+if (-not $WindowsHost) { $WindowsHost = "windows-monitor-host" }
+if (-not $MonitorTarget) { $MonitorTarget = "http://${RpiHost}:8765/api/system" }

@@ -45,7 +45,7 @@ systemctl --user restart rpi-calendar-kiosk.service 2>/dev/null || true
 EOF
     echo "labwc autostart 갱신됨 ($AUTOSTART)"
 else
-    echo "labwc autostart 이미 등록됨 — 건너뜀"
+    echo "labwc autostart 이미 등록됨: 건너뜀"
     # 기존 마커 블록에 wlr-randr 부팅 안전망 라인이 없으면 import-environment 다음 줄에 삽입.
     if ! grep -F -q "/usr/bin/wlr-randr --output HDMI-A-1 --on" "$AUTOSTART"; then
         awk '
@@ -65,6 +65,7 @@ fi
 
 systemctl --user daemon-reload
 systemctl --user enable rpi-calendar-kiosk.service
+systemctl --user restart rpi-calendar-kiosk.service
 # 번인 완화: 23:00 화면 off, 07:00 on. enable --now 로 timer 즉시 활성화.
 systemctl --user enable --now rpi-calendar-kiosk-screen-off.timer
 systemctl --user enable --now rpi-calendar-kiosk-screen-on.timer

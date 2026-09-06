@@ -106,7 +106,7 @@ class Task:
     def from_api_dict(cls, data: dict[str, Any]) -> Task:
         """Google Tasks API v1 ``tasks.list`` 응답의 항목 하나를 변환.
 
-        ``due`` 는 RFC3339(예 ``"2026-06-15T00:00:00.000Z"``) — 날짜부분만 슬라이스.
+        ``due`` 는 RFC3339(예 ``"2026-06-15T00:00:00.000Z"``): 날짜부분만 슬라이스.
         형식이 짧거나 없으면 ``None``(무기한). ``title`` 이 공백이면 기본값.
         """
         due_raw = data.get("due")

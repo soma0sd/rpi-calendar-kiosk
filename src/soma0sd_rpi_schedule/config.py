@@ -17,7 +17,7 @@ CALENDAR_ID = "primary"
 HOLIDAY_CALENDAR_ID = "ko.south_korea#holiday@group.v.calendar.google.com"
 OAUTH_SCOPES = (
     "https://www.googleapis.com/auth/calendar.readonly",
-    # 할일(Google Tasks) 읽기. 민감 범위 — 추가 시 기존 token 무효 → 로컬 재인증 필요.
+    # 할일(Google Tasks) 읽기. 민감 범위: 추가 시 기존 token 무효 → 로컬 재인증 필요.
     "https://www.googleapis.com/auth/tasks.readonly",
 )
 TIMEZONE_NAME = "Asia/Seoul"
@@ -65,6 +65,15 @@ def token_path() -> Path:
         base = Path(xdg) if xdg else Path.home() / ".config"
         return base / "soma0sd_rpi_schedule" / "token.json"
     return project_root() / "secrets" / "token.json"
+
+
+def monitor_token_path() -> Path:
+    """PC monitor push authentication token path."""
+    if sys.platform.startswith("linux"):
+        xdg = os.environ.get("XDG_CONFIG_HOME")
+        base = Path(xdg) if xdg else Path.home() / ".config"
+        return base / "soma0sd_rpi_schedule" / "monitor-token"
+    return project_root() / "secrets" / "monitor-token.txt"
 
 
 def cache_dir() -> Path:
