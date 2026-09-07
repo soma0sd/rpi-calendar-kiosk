@@ -1,0 +1,8 @@
+title: rpi-calendar-kiosk 사용 설명서
+description: 라즈베리파이 캘린더 키오스크의 설치, 설정, 화면 조작 안내
+theme: jekyll-theme-cayman
+lang: ko
+
+# 회의록은 내부 기록이라 공개 문서에서 제외합니다.
+exclude:
+  - meetings
