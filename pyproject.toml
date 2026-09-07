@@ -4,6 +4,8 @@ version = "0.4.0"
 description = "Windows PC 시스템 지표와 구글 캘린더 일정을 표시하는 Raspberry Pi 웹 키오스크"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "google-api-python-client>=2.120",
     "google-auth-oauthlib>=1.2",

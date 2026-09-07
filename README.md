@@ -147,3 +147,8 @@ secrets/                # credentials.json, token.json  (gitignore)
 - **풀스크린은 컴포지터에 위임**: Chromium `--kiosk --ozone-platform=wayland`가 풀스크린, 데코, 커서 처리
 - **Chromium 자동번역과 세션복구 풍선 차단**: HTML `translate="no"`, `<meta name="google" content="notranslate">`, 격리 프로필, Preferences, Managed Policies 적용
 - **Rust 단독 운영**: 단일 바이너리 서버와 창 없는 송신기로 RPi·Windows 운영 Python 프로세스 제거
+
+## 라이선스
+
+- 코드와 문서: **MIT**([`LICENSE`](LICENSE) 참고).
+- 구글 자격 증명(`secrets/`)과 개인 일정 데이터는 저장소에 포함되지 않으며 라이선스 대상이 아닙니다.

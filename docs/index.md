@@ -127,3 +127,9 @@ ssh $env:SOMA0SD_RPI_HOST 'journalctl --user -u rpi-calendar-kiosk.service -f'
 공유 비밀 자체는 회선에 오르지 않으며, 타임스탬프 허용 범위(120초)를 벗어난 요청은 거절합니다.
 
 구글 자격 증명(`secrets/`)은 저장소에 포함되지 않습니다. 일정 원문은 키오스크 본체 밖으로 나가지 않습니다.
+
+## 7. 라이선스
+
+이 프로젝트는 MIT 라이선스로 공개합니다. 저작권 표시와 라이선스 전문을 함께 남기면 복제, 수정, 배포,
+상업적 이용이 모두 허용되며 무보증 조건이 적용됩니다. 전문은 저장소의
+[LICENSE](https://github.com/soma0sd/rpi-calendar-kiosk/blob/main/LICENSE) 에 있습니다.
