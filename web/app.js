@@ -16,6 +16,9 @@ const INNER_HEX_POINTS = [
 ];
 
 let stateCache = null;
+let selectedTask = null;
+let taskCompletionPending = false;
+let stateRevision = 0;
 let calendarSignature = null;
 let monitorTopologySignature = null;
 let monitorSampleSignature = null;
@@ -598,6 +601,10 @@ function formatTodayHeading() {
 }
 
 function openEventDetail(ev) {
+  selectedTask = null;
+  document.getElementById("detail-type").textContent = "일정 상세";
+  document.getElementById("detail-when-label").textContent = "일시";
+  document.getElementById("detail-actions").hidden = true;
   hideCalendarImmediately();
   document.getElementById("detail-title").textContent = ev.summary || "(제목 없음)";
   document.getElementById("detail-when").textContent =
@@ -614,7 +621,66 @@ function openEventDetail(ev) {
 }
 
 function closeEventDetail() {
+  if (taskCompletionPending) return;
+  selectedTask = null;
   document.getElementById("event-detail").hidden = true;
+}
+
+function openTaskDetail(task) {
+  selectedTask = task;
+  hideCalendarImmediately();
+  document.getElementById("detail-type").textContent = "할일 상세";
+  document.getElementById("detail-title").textContent = task.title || "(제목 없음)";
+  document.getElementById("detail-when-label").textContent = "마감";
+  document.getElementById("detail-when").textContent = task.due_date ? formatListDate(task.due_date) : "마감 없음";
+  document.getElementById("detail-location-row").hidden = true;
+  document.getElementById("detail-description").textContent = (task.notes || "").trim() || "상세 설명 없음";
+  document.getElementById("detail-actions").hidden = false;
+  document.getElementById("task-error").hidden = true;
+  document.getElementById("event-detail").hidden = false;
+  document.querySelector(".detail-scroll").scrollTop = 0;
+  document.getElementById("detail-close").focus();
+}
+
+async function completeSelectedTask() {
+  if (!selectedTask || taskCompletionPending) return;
+  const task = selectedTask;
+  const button = document.getElementById("task-complete");
+  const error = document.getElementById("task-error");
+  taskCompletionPending = true;
+  button.disabled = true;
+  button.textContent = "처리 중…";
+  document.getElementById("detail-close").disabled = true;
+  error.hidden = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 55000);
+  let completed = false;
+  try {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      signal: controller.signal,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (result.status !== "completed" || result.id !== task.id) throw new Error("완료 응답을 확인하지 못했습니다.");
+    // 완료 전에 시작한 폴링 응답이 목록을 이전 상태로 되돌리지 않도록 무효화한다.
+    stateRevision += 1;
+    renderAll({ ...stateCache, tasks: (stateCache.tasks || []).filter(t => t.id !== task.id && t.parent !== task.id) });
+    completed = true;
+  } catch (e) {
+    error.textContent = e.name === "AbortError" ? "응답이 지연되고 있습니다. 목록을 확인한 뒤 다시 시도해 주세요." : (e.message || String(e));
+    error.hidden = false;
+  } finally {
+    clearTimeout(timeout);
+    taskCompletionPending = false;
+    button.disabled = false;
+    button.textContent = "완료 처리";
+    document.getElementById("detail-close").disabled = false;
+    if (completed) closeEventDetail();
+    poll();
+  }
 }
 
 function hideCalendarImmediately() {
@@ -652,6 +718,8 @@ function transitionCalendar(visible) {
 }
 
 function openCalendar() {
+  if (taskCompletionPending) return;
+  selectedTask = null;
   const today = kstTodayString();
   const [year, month] = today.split("-").map(Number);
   currentMonth = { year, month };
@@ -665,8 +733,11 @@ function closeCalendar() {
 }
 
 function renderTaskRow(task, today) {
-  const row = document.createElement("div");
+  const row = document.createElement("button");
+  row.type = "button";
   row.className = "event-row is-task";
+  row.setAttribute("aria-label", `${task.title || "제목 없음"} 상세 보기`);
+  row.addEventListener("click", () => openTaskDetail(task));
 
   const main = document.createElement("div");
   main.className = "main";
@@ -824,6 +895,7 @@ function getCalendarSignature(state) {
 
 function renderAll(state) {
   stateCache = state;
+  if (selectedTask && !taskCompletionPending && !(state.tasks || []).some(t => t.id === selectedTask.id)) closeEventDetail();
   renderBanner(state);
   renderSystemMonitors(state);
   document.getElementById("today-date").textContent = formatTodayHeading();
@@ -837,10 +909,12 @@ function renderAll(state) {
 }
 
 async function poll() {
+  const revision = stateRevision;
   try {
     const resp = await fetch("/api/state", { cache: "no-store" });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    renderAll(await resp.json());
+    const state = await resp.json();
+    if (revision === stateRevision) renderAll(state);
   } catch (e) {
     const b = document.getElementById("banner");
     b.textContent = `서버 연결 실패: ${e.message || e}`;
@@ -852,6 +926,7 @@ async function poll() {
 document.getElementById("prev").addEventListener("click", () => changeMonth(-1));
 document.getElementById("next").addEventListener("click", () => changeMonth(+1));
 document.getElementById("detail-close").addEventListener("click", closeEventDetail);
+document.getElementById("task-complete").addEventListener("click", completeSelectedTask);
 document.getElementById("calendar-open").addEventListener("click", openCalendar);
 document.getElementById("calendar-close").addEventListener("click", closeCalendar);
 document.getElementById("monitor-next").addEventListener("click", selectNextMonitor);

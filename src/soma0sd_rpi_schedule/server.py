@@ -17,6 +17,9 @@ import time
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import unquote
+
+from googleapiclient.errors import HttpError
 
 from .calendar import cache as cache_mod
 from .calendar.auth import ReauthRequired, load_credentials
@@ -30,7 +33,8 @@ from .config import (
     token_path,
 )
 from .monitor import SystemMonitorState
-from .signature import SIGNATURE_HEADER, TIMESTAMP_HEADER, verify as verify_signature
+from .signature import SIGNATURE_HEADER, TIMESTAMP_HEADER
+from .signature import verify as verify_signature
 from .time_utils import now_kst
 
 _STATIC_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -55,6 +59,7 @@ class CalendarState:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._update_lock = threading.Lock()
         self._events: list[CalendarEvent] = []
         self._tasks: list[Task] = []
         self._last_sync: datetime | None = None
@@ -79,6 +84,25 @@ class CalendarState:
             }
 
     def fetch_once(self) -> None:
+        with self._update_lock:
+            self._fetch_once_locked()
+
+    def complete_task(self, task_id: str) -> None:
+        """동기화와 직렬화하여 완료한 할일이 이전 응답으로 되살아나지 않게 한다."""
+        with self._update_lock:
+            with self._lock:
+                if not any(t.id == task_id and not t.parent for t in self._tasks):
+                    raise LookupError("목록에 없는 할일입니다. 목록을 새로 확인해 주세요.")
+            GoogleTasksClient(load_credentials(token_path())).complete_task(task_id)
+            with self._lock:
+                self._tasks = [t for t in self._tasks if t.id != task_id and t.parent != task_id]
+                events, tasks = list(self._events), list(self._tasks)
+            try:
+                cache_mod.save(events, cache_events_path(), tasks=tasks)
+            except OSError:
+                pass
+
+    def _fetch_once_locked(self) -> None:
         try:
             creds = load_credentials(token_path())
             client = GoogleCalendarClient(creds)
@@ -244,6 +268,9 @@ def make_handler(
             path = self.path.split("?", 1)[0]
             if not self._guard(path):
                 return
+            if path.startswith("/api/tasks/") and path.endswith("/complete"):
+                self._complete_task(unquote(path[len("/api/tasks/"):-len("/complete")]))
+                return
             if path != "/api/system":
                 self.send_error(404)
                 return
@@ -277,6 +304,37 @@ def make_handler(
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
             self.end_headers()
+
+        def _complete_task(self, task_id: str) -> None:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 65536:
+                    raise ValueError("invalid content length")
+                if not isinstance(json.loads(self.rfile.read(length)), dict):
+                    raise ValueError("invalid request body")
+            except (ValueError, UnicodeDecodeError):
+                self._serve_json({"error": "잘못된 완료 요청입니다."}, status=400)
+                return
+            content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            origin = self.headers.get("Origin")
+            fetch_site = self.headers.get("Sec-Fetch-Site")
+            if (content_type != "application/json"
+                or (origin is not None and origin != f"http://{self.headers.get('Host', '')}")
+                or (fetch_site is not None and fetch_site != "same-origin")):
+                self._serve_json({"error": "키오스크 화면에서 다시 시도해 주세요."}, status=403)
+                return
+            try:
+                state.complete_task(task_id)
+            except LookupError as exc:
+                self._serve_json({"error": str(exc)}, status=404)
+            except (ReauthRequired, HttpError) as exc:
+                status = 401 if isinstance(exc, ReauthRequired) or exc.resp.status in (401, 403) else 502
+                message = "할일 수정 권한이 필요합니다. PC에서 재인증 후 토큰을 배포해 주세요." if status == 401 else "할일 완료 처리에 실패했습니다. 잠시 후 다시 시도해 주세요."
+                self._serve_json({"error": message}, status=status)
+            except Exception:  # noqa: BLE001, 네트워크 오류 시 기존 목록 유지
+                self._serve_json({"error": "할일 완료 처리에 실패했습니다. 잠시 후 다시 시도해 주세요."}, status=502)
+            else:
+                self._serve_json({"id": task_id, "status": "completed"})
 
         def _serve_file(self, path: Path) -> None:
             try:

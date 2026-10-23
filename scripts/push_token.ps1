@@ -18,10 +18,20 @@ if (-not (Test-Path $localToken)) {
 ssh @SshArgs $remote "mkdir -p $remoteDir && chmod 700 $remoteDir"
 if ($LASTEXITCODE -ne 0) { throw "원격 디렉터리 준비 실패 (exit $LASTEXITCODE)" }
 
-scp @SshArgs $localToken "${remote}:$remoteToken"
-if ($LASTEXITCODE -ne 0) { throw "scp 전송 실패 (exit $LASTEXITCODE)" }
-
-ssh @SshArgs $remote "chmod 600 $remoteToken"
-if ($LASTEXITCODE -ne 0) { throw "원격 권한 설정 실패 (exit $LASTEXITCODE)" }
+$temporaryToken = (ssh @SshArgs $remote 'umask 077; mktemp "$HOME/.config/soma0sd_rpi_schedule/.token.XXXXXXXX"')
+if ($LASTEXITCODE -ne 0 -or $temporaryToken -notmatch '^/[A-Za-z0-9_./-]+$') {
+    throw "원격 토큰 임시 파일 생성 실패"
+}
+try {
+    # 소유자 전용으로 미리 생성한 파일에 전송한 뒤 원래 토큰과 원자적으로 교체한다.
+    scp @SshArgs $localToken "${remote}:$temporaryToken"
+    if ($LASTEXITCODE -ne 0) { throw "scp 전송 실패 (exit $LASTEXITCODE)" }
+    ssh @SshArgs $remote "mv -f -- '$temporaryToken' $remoteToken"
+    if ($LASTEXITCODE -ne 0) { throw "원격 토큰 교체 실패 (exit $LASTEXITCODE)" }
+}
+finally {
+    ssh @SshArgs $remote "rm -f -- '$temporaryToken'"
+    if ($LASTEXITCODE -ne 0) { throw "원격 토큰 임시 파일 정리 실패 (exit $LASTEXITCODE)" }
+}
 
 Write-Host "토큰 배포 완료: ${remote}:$remoteToken"

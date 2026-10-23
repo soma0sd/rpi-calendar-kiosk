@@ -38,6 +38,8 @@ pub async fn run_sync_loop(state: CalendarState, token_path: PathBuf) {
 }
 
 pub async fn sync_once(state: &CalendarState, token_path: &Path) -> Result<(), SyncFailure> {
+    // 조회 중 완료한 할일이 이전 응답으로 되살아나거나 토큰 갱신이 충돌하지 않도록 직렬화한다.
+    let _update = state.update_lock.lock().await;
     let mut session = GoogleSession::load(token_path).await?;
     let start = now_kst() - ChronoDuration::days(1);
     let end = now_kst() + ChronoDuration::days(UPCOMING_DAYS);
@@ -78,6 +80,40 @@ pub async fn sync_once(state: &CalendarState, token_path: &Path) -> Result<(), S
     Ok(())
 }
 
+#[derive(Debug, Error)]
+pub enum CompleteTaskFailure {
+    #[error("목록에 없는 할일입니다. 목록을 새로 확인해 주세요.")]
+    NotFound,
+    #[error(transparent)]
+    Google(#[from] SyncFailure),
+}
+
+pub async fn complete_task(
+    state: &CalendarState,
+    token_path: &Path,
+    task_id: &str,
+) -> Result<(), CompleteTaskFailure> {
+    let _update = state.update_lock.lock().await;
+    if !state
+        .snapshot()
+        .await
+        .tasks
+        .iter()
+        .any(|task| task.id == task_id && task.parent.is_empty())
+    {
+        return Err(CompleteTaskFailure::NotFound);
+    }
+    let mut session = GoogleSession::load(token_path).await?;
+    let url = format!(
+        "https://tasks.googleapis.com/tasks/v1/lists/{}/tasks/{}",
+        urlencoding::encode(TASK_LIST_ID),
+        urlencoding::encode(task_id),
+    );
+    session.complete_task_at(&url).await?;
+    state.remove_completed_task(task_id).await;
+    Ok(())
+}
+
 struct GoogleSession {
     client: Client,
     token_path: PathBuf,
@@ -85,6 +121,48 @@ struct GoogleSession {
 }
 
 impl GoogleSession {
+    async fn complete_task_at(&mut self, url: &str) -> Result<(), SyncFailure> {
+        let mut token = self.access_token(false).await?;
+        let payload = serde_json::json!({"status": "completed"});
+        let mut response = self
+            .client
+            .patch(url)
+            .bearer_auth(&token)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|error| anyhow!(error).context("할일 완료 요청 실패"))?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            token = self.access_token(true).await?;
+            response = self
+                .client
+                .patch(url)
+                .bearer_auth(&token)
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|error| anyhow!(error).context("할일 완료 재요청 실패"))?;
+        }
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|error| anyhow!(error).context("할일 완료 응답 형식 오류"))?;
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return Err(SyncFailure::Authentication(
+                "할일 수정 권한이 필요합니다. PC에서 --auth 재인증 후 토큰을 배포해 주세요."
+                    .to_owned(),
+            ));
+        }
+        if !status.is_success() {
+            return Err(anyhow!(api_error_message(status, &body)).into());
+        }
+        if body.get("status").and_then(Value::as_str) != Some("completed") {
+            return Err(anyhow!("Google에서 할일 완료를 확인하지 못했습니다.").into());
+        }
+        Ok(())
+    }
+
     async fn load(token_path: &Path) -> Result<Self, SyncFailure> {
         let raw = tokio::fs::read_to_string(token_path)
             .await
@@ -359,6 +437,88 @@ fn api_error_message(status: StatusCode, body: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn completion_sends_patch_and_requires_confirmed_status() {
+        use axum::{Json, Router, extract::State, http::HeaderMap, routing::patch};
+        async fn respond(
+            State(status): State<StatusCode>,
+            headers: HeaderMap,
+            Json(body): Json<Value>,
+        ) -> (StatusCode, Json<Value>) {
+            assert_eq!(headers["authorization"], "Bearer test-access");
+            assert_eq!(body, serde_json::json!({"status": "completed"}));
+            let payload = if status == StatusCode::OK {
+                serde_json::json!({"status": "completed"})
+            } else if status == StatusCode::ACCEPTED {
+                serde_json::json!({"status": "needsAction"})
+            } else {
+                serde_json::json!({"error": {"message": "denied"}})
+            };
+            (status, Json(payload))
+        }
+        for status in [
+            StatusCode::OK,
+            StatusCode::ACCEPTED,
+            StatusCode::FORBIDDEN,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/task", listener.local_addr().unwrap());
+            let app = Router::new()
+                .route("/task", patch(respond))
+                .with_state(status);
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let mut session = GoogleSession {
+                client: Client::new(),
+                token_path: PathBuf::new(),
+                document: serde_json::json!({"token": "test-access", "expiry": "2099-01-01T00:00:00Z"}),
+            };
+            let result = session.complete_task_at(&url).await;
+            match status {
+                StatusCode::OK => assert!(result.is_ok()),
+                StatusCode::FORBIDDEN => {
+                    assert!(matches!(result, Err(SyncFailure::Authentication(_))))
+                }
+                _ => assert!(matches!(result, Err(SyncFailure::Other(_)))),
+            }
+            server.abort();
+            let _ = server.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn unknown_tasks_never_load_credentials() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = CalendarState::load(directory.path().join("events.json"));
+        let result = complete_task(
+            &state,
+            &directory.path().join("missing-token.json"),
+            "unknown",
+        )
+        .await;
+        assert!(matches!(result, Err(CompleteTaskFailure::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn completion_removes_parent_and_children_from_persistent_cache() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("events.json");
+        let state = CalendarState::load(path.clone());
+        let tasks = [
+            serde_json::json!({"id": "parent", "title": "상위"}),
+            serde_json::json!({"id": "child", "parent": "parent", "title": "하위"}),
+            serde_json::json!({"id": "other", "title": "유지"}),
+        ]
+        .iter()
+        .map(CalendarTask::from_google)
+        .collect();
+        state.apply_success(Vec::new(), Some(tasks), None).await;
+        state.remove_completed_task("parent").await;
+        let restored = CalendarState::load(path).snapshot().await;
+        assert_eq!(restored.tasks.len(), 1);
+        assert_eq!(restored.tasks[0].id, "other");
+    }
 
     #[tokio::test]
     async fn token_document_is_written_owner_only_and_replaceable() {

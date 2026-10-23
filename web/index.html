@@ -58,13 +58,17 @@
     <div class="detail-panel">
       <button id="detail-close" class="detail-close" type="button" aria-label="일정 상세 닫기">닫기</button>
       <div class="detail-scroll">
-        <div class="detail-type">일정 상세</div>
+        <div id="detail-type" class="detail-type">일정 상세</div>
         <h2 id="detail-title">일정</h2>
         <dl class="detail-fields">
-          <div><dt>일시</dt><dd id="detail-when"></dd></div>
+          <div><dt id="detail-when-label">일시</dt><dd id="detail-when"></dd></div>
           <div id="detail-location-row"><dt>장소</dt><dd id="detail-location"></dd></div>
         </dl>
         <div id="detail-description" class="detail-description"></div>
+      </div>
+      <div id="detail-actions" class="detail-actions" hidden>
+        <p id="task-error" class="task-error" role="alert" hidden></p>
+        <button id="task-complete" class="task-complete" type="button">완료 처리</button>
       </div>
     </div>
   </section>

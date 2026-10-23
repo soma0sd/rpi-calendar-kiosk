@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from soma0sd_rpi_schedule import signature
 from soma0sd_rpi_schedule.calendar.models import CalendarEvent, Task
 from soma0sd_rpi_schedule.monitor import SystemMonitorState
@@ -21,6 +23,62 @@ from soma0sd_rpi_schedule.server import (
 )
 
 KST = ZoneInfo("Asia/Seoul")
+
+
+def test_complete_task_updates_cache_only_after_google_success(tmp_path, monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from soma0sd_rpi_schedule import server as module
+
+    path = tmp_path / "events.json"
+    monkeypatch.setattr(module, "cache_events_path", lambda: path)
+    monkeypatch.setattr(module, "load_credentials", lambda _: object())
+    client = MagicMock()
+    monkeypatch.setattr(module, "GoogleTasksClient", lambda _: client)
+    state = CalendarState()
+    state._override([], [Task(id="t1", title="검증", due_date=None), Task(id="t2", title="유지", due_date=None)])
+    client.complete_task.side_effect = RuntimeError("일시 장애")
+    with pytest.raises(RuntimeError):
+        state.complete_task("t1")
+    assert [t["id"] for t in state.snapshot()["tasks"]] == ["t1", "t2"]
+    client.complete_task.side_effect = None
+    state.complete_task("t1")
+    assert [t["id"] for t in CalendarState().snapshot()["tasks"]] == ["t2"]
+    with pytest.raises(LookupError):
+        state.complete_task("unknown")
+    assert client.complete_task.call_count == 2
+
+
+@pytest.mark.parametrize("headers,expected", [
+    ({"Content-Type": "text/plain"}, 403),
+    ({"Content-Type": "application/json", "Origin": "https://attacker.example"}, 403),
+    ({"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"}, 403),
+    ({"Content-Type": "application/json"}, 200),
+])
+def test_task_completion_http_guards(tmp_path, monkeypatch, headers, expected) -> None:
+    from unittest.mock import MagicMock
+
+    from soma0sd_rpi_schedule import server as module
+
+    monkeypatch.setattr(module, "cache_events_path", lambda: tmp_path / "events.json")
+    state = CalendarState()
+    complete = MagicMock()
+    monkeypatch.setattr(state, "complete_task", complete)
+    server = _ThreadingServer(("127.0.0.1", 0), make_handler(state))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        connection.request("POST", "/api/tasks/t1/complete", "{}", headers)
+        response = connection.getresponse()
+        assert response.status == expected
+        response.read()
+        connection.close()
+        assert complete.call_count == (1 if expected == 200 else 0)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def _sample_event() -> CalendarEvent:

@@ -1,11 +1,12 @@
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::Router;
 use axum::body::{Body, Bytes};
-use axum::extract::{ConnectInfo, DefaultBodyLimit, Request, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HOST};
 use axum::http::{HeaderMap, Response, StatusCode};
 use axum::middleware::{self, Next};
@@ -13,8 +14,8 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use serde_json::{Map, Value, json};
 
-
 use crate::calendar::{CalendarState, now_kst};
+use crate::google::{self, CompleteTaskFailure, SyncFailure};
 use crate::monitor::{MonitorSample, MonitorStore, MonitorView};
 use crate::signature::{SIGNATURE_HEADER, TIMESTAMP_HEADER};
 use crate::{APP_NAME, APP_VERSION, signature};
@@ -28,6 +29,7 @@ pub struct AppState {
     pub calendar: CalendarState,
     pub monitors: MonitorStore,
     monitor_token: Arc<str>,
+    token_path: Option<PathBuf>,
 }
 
 impl AppState {
@@ -36,7 +38,13 @@ impl AppState {
             calendar,
             monitors: MonitorStore::new(Duration::from_secs(12)),
             monitor_token: Arc::from(monitor_token),
+            token_path: None,
         }
+    }
+
+    pub fn with_token_path(mut self, path: PathBuf) -> Self {
+        self.token_path = Some(path);
+        self
     }
 }
 
@@ -48,6 +56,7 @@ pub fn router(state: AppState) -> Router {
         .route("/static/app.js", get(script))
         .route("/api/state", get(api_state))
         .route("/api/system", post(api_system))
+        .route("/api/tasks/{task_id}/complete", post(api_complete_task))
         .route("/healthz", get(health))
         .layer(middleware::from_fn(guard_request))
         .layer(DefaultBodyLimit::max(65_536))
@@ -162,6 +171,75 @@ async fn api_system(
         return no_store_json(StatusCode::BAD_REQUEST, json!({"error": error.to_string()}));
     }
     (StatusCode::NO_CONTENT, [(CACHE_CONTROL, "no-store")]).into_response()
+}
+
+async fn api_complete_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    // JSON과 동일 출처를 요구해 외부 사이트의 폼 전송을 차단한다.
+    if !task_write_is_allowed(&headers) {
+        return no_store_json(
+            StatusCode::FORBIDDEN,
+            json!({"error": "키오스크 화면에서 다시 시도해 주세요."}),
+        );
+    }
+    if !serde_json::from_slice::<Value>(&body).is_ok_and(|value| value.is_object()) {
+        return no_store_json(
+            StatusCode::BAD_REQUEST,
+            json!({"error": "잘못된 완료 요청입니다."}),
+        );
+    }
+    let Some(token_path) = state.token_path.as_deref() else {
+        return no_store_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({"error": "할일 인증 설정이 없습니다."}),
+        );
+    };
+    match google::complete_task(&state.calendar, token_path, &task_id).await {
+        Ok(()) => no_store_json(
+            StatusCode::OK,
+            json!({"id": task_id, "status": "completed"}),
+        ),
+        Err(CompleteTaskFailure::NotFound) => no_store_json(
+            StatusCode::NOT_FOUND,
+            json!({"error": "목록에 없는 할일입니다. 목록을 새로 확인해 주세요."}),
+        ),
+        Err(CompleteTaskFailure::Google(SyncFailure::Authentication(_))) => no_store_json(
+            StatusCode::UNAUTHORIZED,
+            json!({"error": "할일 수정 권한이 필요합니다. PC에서 재인증 후 토큰을 배포해 주세요."}),
+        ),
+        Err(error) => {
+            eprintln!("[rpi-schedule] task completion failed: {error}");
+            no_store_json(
+                StatusCode::BAD_GATEWAY,
+                json!({"error": "할일 완료 처리에 실패했습니다. 잠시 후 다시 시도해 주세요."}),
+            )
+        }
+    }
+}
+
+fn task_write_is_allowed(headers: &HeaderMap) -> bool {
+    let content_type = header_text(headers, "content-type")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim();
+    if !content_type.eq_ignore_ascii_case("application/json") {
+        return false;
+    }
+    if headers.contains_key("sec-fetch-site")
+        && header_text(headers, "sec-fetch-site") != "same-origin"
+    {
+        return false;
+    }
+    if headers.contains_key("origin") {
+        return header_text(headers, "origin")
+            == format!("http://{}", header_text(headers, "host"));
+    }
+    true
 }
 
 fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
@@ -373,6 +451,67 @@ mod tests {
         let payload: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload["runtime"], "rust");
         assert_eq!(payload["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn task_completion_rejects_remote_and_cross_site_requests() {
+        for (peer, content_type, origin, fetch_site, expected) in [
+            (
+                REMOTE_PEER,
+                "application/json",
+                "http://127.0.0.1:8765",
+                "same-origin",
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                LOOPBACK_PEER,
+                "text/plain",
+                "http://127.0.0.1:8765",
+                "same-origin",
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                LOOPBACK_PEER,
+                "application/json",
+                "https://attacker.example",
+                "cross-site",
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                LOOPBACK_PEER,
+                "application/json",
+                "http://127.0.0.1:8765",
+                "cross-site",
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                LOOPBACK_PEER,
+                "application/json",
+                "null",
+                "same-origin",
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                LOOPBACK_PEER,
+                "application/json",
+                "http://127.0.0.1:8765",
+                "same-origin",
+                StatusCode::NOT_FOUND,
+            ),
+        ] {
+            let request = with_peer(
+                Request::post("/api/tasks/unknown/complete")
+                    .header(HOST, "127.0.0.1:8765")
+                    .header(CONTENT_TYPE, content_type)
+                    .header("origin", origin)
+                    .header("sec-fetch-site", fetch_site)
+                    .body(Body::from("{}"))
+                    .unwrap(),
+                peer,
+            );
+            let app = router(test_state().with_token_path(PathBuf::from("missing-token.json")));
+            assert_eq!(app.oneshot(request).await.unwrap().status(), expected);
+        }
     }
 
     #[test]

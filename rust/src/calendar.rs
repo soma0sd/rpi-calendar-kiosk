@@ -142,6 +142,7 @@ struct CachePayload {
 pub struct CalendarState {
     inner: Arc<RwLock<CalendarData>>,
     cache_path: PathBuf,
+    pub(crate) update_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl CalendarState {
@@ -150,6 +151,7 @@ impl CalendarState {
         Self {
             inner: Arc::new(RwLock::new(initial)),
             cache_path,
+            update_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -161,6 +163,23 @@ impl CalendarState {
         let mut data = self.inner.write().await;
         data.last_error = Some(message);
         data.auth_required = auth_required;
+    }
+
+    /// Google 완료 응답 이후 메모리와 디스크 캐시에서 해당 할일을 제거한다.
+    pub async fn remove_completed_task(&self, task_id: &str) {
+        let cache = {
+            let mut data = self.inner.write().await;
+            data.tasks
+                .retain(|task| task.id != task_id && task.parent != task_id);
+            CachePayload {
+                saved_at: now_kst().to_rfc3339_opts(SecondsFormat::Secs, false),
+                events: data.events.clone(),
+                tasks: data.tasks.clone(),
+            }
+        };
+        if let Err(error) = save_cache(&self.cache_path, &cache).await {
+            eprintln!("[rpi-schedule] cache save failed: {error:#}");
+        }
     }
 
     pub async fn apply_success(

@@ -15,7 +15,7 @@ D-Day 목록과 월간 달력으로 보여 주고, 같은 네트워크의 Window
 |---|---|
 | 보드 | Raspberry Pi 4, Debian 12 Bookworm, Wayland(labwc), Chromium 138 이상 |
 | 패널 | Waveshare HDMI 400x1280(컴포지터에서 270도 회전하여 1280x400 가로로 사용) |
-| 계정 | 구글 계정, Google Cloud Console 의 OAuth 데스크톱 클라이언트, Calendar API 사용 설정 |
+| 계정 | 구글 계정, Google Cloud Console 의 OAuth 데스크톱 클라이언트, Calendar API·Tasks API 사용 설정 |
 | 작업 PC | Windows 11, Rust stable, Python 3.11, uv, PowerShell |
 
 전원은 USB-C 로 공급합니다. PC 지표는 케이블이 아니라 내부 네트워크의 서명된 HTTP 요청으로 전달됩니다.
@@ -25,7 +25,7 @@ D-Day 목록과 월간 달력으로 보여 주고, 같은 네트워크의 Window
 ### 2.1 구글 인증
 
 Google Cloud Console 에서 OAuth 데스크톱 클라이언트를 발급하여 `secrets/credentials.json` 으로 저장하고,
-같은 콘솔에서 Google Calendar API 를 사용 설정합니다. 그다음 작업 PC 에서 최초 1회 동의 절차를 진행합니다.
+같은 콘솔에서 Google Calendar API와 Google Tasks API를 사용 설정합니다. 그다음 작업 PC에서 최초 1회 동의 절차를 진행합니다. 일정 조회는 읽기 전용이며, 할일 완료에는 할일 수정 권한이 필요합니다.
 
 ```powershell
 uv sync
@@ -82,6 +82,10 @@ pwsh scripts/install_service.ps1              # systemd 사용자 서비스 등�
 - 기본 화면은 D-Day 순서의 일정과 할 일 목록입니다. 분류별로 제목 색상이 다릅니다.
 - 오른쪽 세로 `›` 버튼을 누르면 같은 영역에 월간 달력이 나타나고, `‹` 버튼으로 목록으로 돌아옵니다.
 - 일정을 터치하면 제목, 일시, 장소, 설명 전체를 스크롤로 확인할 수 있습니다.
+- 할일을 터치하면 마감과 메모를 확인할 수 있습니다. 하단의 `완료 처리`를 누르면 Google Tasks에도 완료가 반영되고 목록과 달력에서 즉시 제외됩니다.
+- 완료 처리 중에는 버튼을 잠시 비활성화합니다. 실패 시 오류를 표시하며 할일은 유지됩니다.
+
+기존 읽기 전용 할일 토큰을 사용하는 경우 작업 PC에서 `uv run python -m soma0sd_rpi_schedule --auth`로 재인증하고 `pwsh scripts/push_token.ps1`로 토큰을 먼저 복사한 뒤 서버를 배포·재시작합니다.
 
 ![일정 전체 화면 상세](screenshots/event-detail-fullscreen.png)
 

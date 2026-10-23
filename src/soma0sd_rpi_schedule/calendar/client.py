@@ -113,6 +113,18 @@ class GoogleTasksClient:
                 break
         return tasks
 
+    def complete_task(self, task_id: str, tasklist_id: str = TASKS_TASKLIST_ID) -> None:
+        """지정한 할일을 완료로 변경하고 Google 응답을 확인한다."""
+        if not tasklist_id:
+            tasklist_id = self._first_tasklist_id()
+            if tasklist_id is None:
+                raise LookupError("할일 목록이 없습니다.")
+        result = self._service.tasks().patch(
+            tasklist=tasklist_id, task=task_id, body={"status": "completed"},
+        ).execute()
+        if result.get("status") != "completed":
+            raise RuntimeError("Google에서 할일 완료를 확인하지 못했습니다.")
+
     def _first_tasklist_id(self) -> str | None:
         response = self._service.tasklists().list(maxResults=1).execute()
         items = response.get("items", [])

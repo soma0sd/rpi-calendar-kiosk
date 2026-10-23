@@ -54,7 +54,7 @@ async fn run() -> Result<()> {
         }
     };
     let calendar = CalendarState::load(cache_path);
-    let state = AppState::new(calendar.clone(), monitor_token);
+    let state = AppState::new(calendar.clone(), monitor_token).with_token_path(token_path.clone());
     tokio::spawn(run_sync_loop(calendar, token_path));
 
     let address = SocketAddr::new(args.host, args.port);

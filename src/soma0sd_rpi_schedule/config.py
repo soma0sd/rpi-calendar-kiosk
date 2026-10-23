@@ -17,8 +17,8 @@ CALENDAR_ID = "primary"
 HOLIDAY_CALENDAR_ID = "ko.south_korea#holiday@group.v.calendar.google.com"
 OAUTH_SCOPES = (
     "https://www.googleapis.com/auth/calendar.readonly",
-    # 할일(Google Tasks) 읽기. 민감 범위: 추가 시 기존 token 무효 → 로컬 재인증 필요.
-    "https://www.googleapis.com/auth/tasks.readonly",
+    # 할일 조회·완료 처리. 기존 읽기 전용 토큰은 로컬 재인증 필요.
+    "https://www.googleapis.com/auth/tasks",
 )
 TIMEZONE_NAME = "Asia/Seoul"
 

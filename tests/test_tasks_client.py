@@ -4,7 +4,23 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from soma0sd_rpi_schedule.calendar.client import GoogleTasksClient
+
+
+def test_complete_task_patches_only_status() -> None:
+    service = MagicMock()
+    service.tasks().patch().execute.return_value = {"id": "t1", "status": "completed"}
+    GoogleTasksClient(MagicMock(), service=service).complete_task("t1")
+    service.tasks().patch.assert_called_with(tasklist="@default", task="t1", body={"status": "completed"})
+
+
+def test_complete_task_requires_google_confirmation() -> None:
+    service = MagicMock()
+    service.tasks().patch().execute.return_value = {"status": "needsAction"}
+    with pytest.raises(RuntimeError):
+        GoogleTasksClient(MagicMock(), service=service).complete_task("t1")
 
 
 class _Paginator:
