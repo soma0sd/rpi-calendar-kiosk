@@ -186,22 +186,35 @@ async fn api_complete_task(
             json!({"error": "키오스크 화면에서 다시 시도해 주세요."}),
         );
     }
-    if !serde_json::from_slice::<Value>(&body).is_ok_and(|value| value.is_object()) {
-        return no_store_json(
-            StatusCode::BAD_REQUEST,
-            json!({"error": "잘못된 완료 요청입니다."}),
-        );
-    }
+    let payload = match serde_json::from_slice::<Value>(&body) {
+        Ok(value) if value.is_object() => value,
+        _ => {
+            return no_store_json(
+                StatusCode::BAD_REQUEST,
+                json!({"error": "잘못된 완료 요청입니다."}),
+            );
+        }
+    };
+    let task_list_id = match payload.get("task_list_id") {
+        None => crate::config::TASK_LIST_ID,
+        Some(Value::String(id)) if !id.is_empty() => id.as_str(),
+        _ => {
+            return no_store_json(
+                StatusCode::BAD_REQUEST,
+                json!({"error": "잘못된 할일 목록입니다."}),
+            );
+        }
+    };
     let Some(token_path) = state.token_path.as_deref() else {
         return no_store_json(
             StatusCode::SERVICE_UNAVAILABLE,
             json!({"error": "할일 인증 설정이 없습니다."}),
         );
     };
-    match google::complete_task(&state.calendar, token_path, &task_id).await {
+    match google::complete_task(&state.calendar, token_path, &task_id, task_list_id).await {
         Ok(()) => no_store_json(
             StatusCode::OK,
-            json!({"id": task_id, "status": "completed"}),
+            json!({"id": task_id, "task_list_id": task_list_id, "status": "completed"}),
         ),
         Err(CompleteTaskFailure::NotFound) => no_store_json(
             StatusCode::NOT_FOUND,

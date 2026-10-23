@@ -23,7 +23,7 @@ OAUTH_SCOPES = (
 TIMEZONE_NAME = "Asia/Seoul"
 
 # 할일(Google Tasks) 조회
-TASKS_TASKLIST_ID = "@default"   # 빈 값이면 첫 tasklist 자동 선택
+TASKS_TASKLIST_ID = "@default"   # 이전 캐시·완료 요청 호환용. 동기화는 전체 목록 조회.
 TASKS_MAX_RESULTS = 100          # tasks.list 페이지 크기
 
 # 폴링/디바운스 (초)

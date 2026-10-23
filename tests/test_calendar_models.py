@@ -186,7 +186,7 @@ def test_task_records_parent_for_subtasks() -> None:
 
 
 def test_task_json_round_trip() -> None:
-    original = Task(id="r", title="라운드", due_date="2026-06-15", notes="n", parent="")
+    original = Task(id="r", title="라운드", due_date="2026-06-15", notes="n", parent="", task_list_id="second")
     assert Task.from_json_dict(original.to_json_dict()) == original
     # 무기한(due_date None) 도 라운드트립.
     undated = Task(id="u", title="무기한", due_date=None)

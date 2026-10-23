@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 pub const POLL_INTERVAL_SECONDS: u64 = 300;
 pub const UPCOMING_DAYS: i64 = 90;
 pub const HOLIDAY_CALENDAR_ID: &str = "ko.south_korea#holiday@group.v.calendar.google.com";
+// 이전 캐시·완료 요청 호환용. 새 동기화는 전체 할일 목록을 조회한다.
 pub const TASK_LIST_ID: &str = "@default";
 
 #[derive(Clone, Debug)]

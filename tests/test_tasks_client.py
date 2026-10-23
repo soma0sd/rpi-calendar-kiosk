@@ -58,7 +58,7 @@ class _TasklistsStub:
 class _StubTasksService:
     def __init__(self, task_pages: list[dict], tasklists_response: dict | None = None) -> None:
         self._paginator = _Paginator(task_pages)
-        self._tasklists = _TasklistsStub(tasklists_response or {"items": []})
+        self._tasklists = _TasklistsStub(tasklists_response if tasklists_response is not None else {"items": [{"id": "@default"}]})
 
     def tasks(self):
         return self._paginator
@@ -122,13 +122,13 @@ def test_list_tasks_empty_tasklist() -> None:
     assert client.list_tasks() == []
 
 
-def test_list_tasks_falls_back_to_first_tasklist() -> None:
+def test_list_tasks_attaches_source_tasklist() -> None:
     page = {"items": [{"id": "a", "title": "A", "status": "needsAction"}]}
     svc = _StubTasksService([page], tasklists_response={"items": [{"id": "list-xyz"}]})
     client = GoogleTasksClient(MagicMock(), service=svc)
     tasks = client.list_tasks(tasklist_id="")
     assert [t.id for t in tasks] == ["a"]
-    # 빈 tasklist_id → 첫 tasklist id 로 조회.
+    assert tasks[0].task_list_id == "list-xyz"
     assert svc._paginator.last_kwargs["tasklist"] == "list-xyz"
 
 
@@ -136,3 +136,29 @@ def test_list_tasks_no_tasklists_returns_empty() -> None:
     svc = _StubTasksService([{"items": []}], tasklists_response={"items": []})
     client = GoogleTasksClient(MagicMock(), service=svc)
     assert client.list_tasks(tasklist_id="") == []
+
+
+def test_all_tasklists_and_task_pages_are_collected() -> None:
+    service = MagicMock()
+    service.tasklists().list().execute.side_effect = [
+        {"items": [{"id": "empty-default"}], "nextPageToken": "lists-next"},
+        {"items": [{"id": "second"}]},
+    ]
+    service.tasks().list().execute.side_effect = [
+        {"items": []},
+        {"items": [{"id": "a", "title": "두 번째 목록"}], "nextPageToken": "tasks-next"},
+        {"items": [{"id": "b", "title": "다음 페이지"}]},
+    ]
+    service.tasks().list.reset_mock()
+    tasks = GoogleTasksClient(MagicMock(), service=service).list_tasks()
+    assert [(t.id, t.task_list_id) for t in tasks] == [("a", "second"), ("b", "second")]
+    calls = service.tasks().list.call_args_list
+    assert [call.kwargs["tasklist"] for call in calls] == ["empty-default", "second", "second"]
+    assert calls[-1].kwargs["pageToken"] == "tasks-next"
+
+
+def test_completion_uses_requested_source_tasklist() -> None:
+    service = MagicMock()
+    service.tasks().patch().execute.return_value = {"status": "completed"}
+    GoogleTasksClient(MagicMock(), service=service).complete_task("a", "second")
+    service.tasks().patch.assert_called_with(tasklist="second", task="a", body={"status": "completed"})

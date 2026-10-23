@@ -86,12 +86,18 @@ impl CalendarEvent {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct CalendarTask {
     pub id: String,
+    #[serde(default = "default_task_list_id")]
+    pub task_list_id: String,
     pub title: String,
     pub due_date: Option<String>,
     #[serde(default)]
     pub notes: String,
     #[serde(default)]
     pub parent: String,
+}
+
+fn default_task_list_id() -> String {
+    crate::config::TASK_LIST_ID.to_owned()
 }
 
 impl CalendarTask {
@@ -105,6 +111,7 @@ impl CalendarTask {
             .map(str::to_owned);
         Self {
             id: text_field(value, "id", ""),
+            task_list_id: default_task_list_id(),
             title: if title.is_empty() {
                 "(제목 없음)".to_owned()
             } else {
@@ -166,11 +173,12 @@ impl CalendarState {
     }
 
     /// Google 완료 응답 이후 메모리와 디스크 캐시에서 해당 할일을 제거한다.
-    pub async fn remove_completed_task(&self, task_id: &str) {
+    pub async fn remove_completed_task(&self, task_id: &str, task_list_id: &str) {
         let cache = {
             let mut data = self.inner.write().await;
-            data.tasks
-                .retain(|task| task.id != task_id && task.parent != task_id);
+            data.tasks.retain(|task| {
+                task.task_list_id != task_list_id || (task.id != task_id && task.parent != task_id)
+            });
             CachePayload {
                 saved_at: now_kst().to_rfc3339_opts(SecondsFormat::Secs, false),
                 events: data.events.clone(),

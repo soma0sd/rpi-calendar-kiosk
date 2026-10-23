@@ -9,7 +9,7 @@ use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
 use crate::calendar::{CalendarEvent, CalendarState, CalendarTask, now_kst};
-use crate::config::{HOLIDAY_CALENDAR_ID, POLL_INTERVAL_SECONDS, TASK_LIST_ID, UPCOMING_DAYS};
+use crate::config::{HOLIDAY_CALENDAR_ID, POLL_INTERVAL_SECONDS, UPCOMING_DAYS};
 
 #[derive(Debug, Error)]
 pub enum SyncFailure {
@@ -65,7 +65,10 @@ pub async fn sync_once(state: &CalendarState, token_path: &Path) -> Result<(), S
         }
     };
 
-    let tasks = match session.list_tasks(TASK_LIST_ID).await {
+    let tasks = match session
+        .list_all_tasks_at("https://tasks.googleapis.com/tasks/v1")
+        .await
+    {
         Ok(tasks) => Some(tasks),
         Err(error) => {
             warnings.push(format!("할일 동기화 실패: {error}"));
@@ -92,25 +95,22 @@ pub async fn complete_task(
     state: &CalendarState,
     token_path: &Path,
     task_id: &str,
+    task_list_id: &str,
 ) -> Result<(), CompleteTaskFailure> {
     let _update = state.update_lock.lock().await;
-    if !state
-        .snapshot()
-        .await
-        .tasks
-        .iter()
-        .any(|task| task.id == task_id && task.parent.is_empty())
-    {
+    if !state.snapshot().await.tasks.iter().any(|task| {
+        task.id == task_id && task.task_list_id == task_list_id && task.parent.is_empty()
+    }) {
         return Err(CompleteTaskFailure::NotFound);
     }
     let mut session = GoogleSession::load(token_path).await?;
     let url = format!(
         "https://tasks.googleapis.com/tasks/v1/lists/{}/tasks/{}",
-        urlencoding::encode(TASK_LIST_ID),
+        urlencoding::encode(task_list_id),
         urlencoding::encode(task_id),
     );
     session.complete_task_at(&url).await?;
-    state.remove_completed_task(task_id).await;
+    state.remove_completed_task(task_id, task_list_id).await;
     Ok(())
 }
 
@@ -350,9 +350,50 @@ impl GoogleSession {
         Ok(events)
     }
 
-    async fn list_tasks(&mut self, task_list_id: &str) -> Result<Vec<CalendarTask>, SyncFailure> {
+    async fn list_all_tasks_at(
+        &mut self,
+        base_url: &str,
+    ) -> Result<Vec<CalendarTask>, SyncFailure> {
+        let mut list_ids = Vec::new();
+        let mut page_token = None;
+        loop {
+            let mut query = vec![("maxResults".to_owned(), "100".to_owned())];
+            if let Some(token) = page_token {
+                query.push(("pageToken".to_owned(), token));
+            }
+            let payload = self
+                .get_json(&format!("{base_url}/users/@me/lists"), &query)
+                .await?;
+            if let Some(items) = payload.get("items").and_then(Value::as_array) {
+                list_ids.extend(
+                    items
+                        .iter()
+                        .filter_map(|item| item.get("id").and_then(Value::as_str))
+                        .map(str::to_owned),
+                );
+            }
+            page_token = payload
+                .get("nextPageToken")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if page_token.is_none() {
+                break;
+            }
+        }
+        let mut tasks = Vec::new();
+        for list_id in list_ids {
+            tasks.extend(self.list_tasks_at(base_url, &list_id).await?);
+        }
+        Ok(tasks)
+    }
+
+    async fn list_tasks_at(
+        &mut self,
+        base_url: &str,
+        task_list_id: &str,
+    ) -> Result<Vec<CalendarTask>, SyncFailure> {
         let url = format!(
-            "https://tasks.googleapis.com/tasks/v1/lists/{}/tasks",
+            "{base_url}/lists/{}/tasks",
             urlencoding::encode(task_list_id)
         );
         let mut tasks = Vec::new();
@@ -374,7 +415,11 @@ impl GoogleSession {
                         .filter(|item| {
                             item.get("status").and_then(Value::as_str) != Some("completed")
                         })
-                        .map(CalendarTask::from_google),
+                        .map(|item| {
+                            let mut task = CalendarTask::from_google(item);
+                            task.task_list_id = task_list_id.to_owned();
+                            task
+                        }),
                 );
             }
             page_token = payload
@@ -439,6 +484,63 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn empty_default_list_does_not_hide_later_lists_and_pages() {
+        use axum::{
+            Json, Router,
+            extract::{Path, Query},
+            routing::get,
+        };
+        use std::collections::HashMap;
+
+        async fn lists(Query(query): Query<HashMap<String, String>>) -> Json<Value> {
+            Json(if !query.contains_key("pageToken") {
+                serde_json::json!({"items": [{"id": "empty-default"}], "nextPageToken": "lists-next"})
+            } else {
+                assert_eq!(query["pageToken"], "lists-next");
+                serde_json::json!({"items": [{"id": "second"}]})
+            })
+        }
+        async fn tasks(
+            Path(id): Path<String>,
+            Query(query): Query<HashMap<String, String>>,
+        ) -> Json<Value> {
+            assert_eq!(query["showCompleted"], "false");
+            Json(match id.as_str() {
+                "empty-default" => serde_json::json!({"items": []}),
+                "second" if !query.contains_key("pageToken") => {
+                    serde_json::json!({"items": [{"id": "a", "title": "두 번째 목록"}], "nextPageToken": "tasks-next"})
+                }
+                "second" => {
+                    assert_eq!(query["pageToken"], "tasks-next");
+                    serde_json::json!({"items": [{"id": "b", "title": "다음 페이지"}, {"id": "done", "status": "completed"}]})
+                }
+                _ => panic!("unexpected task list"),
+            })
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new()
+            .route("/users/@me/lists", get(lists))
+            .route("/lists/{id}/tasks", get(tasks));
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut session = GoogleSession {
+            client: Client::new(),
+            token_path: PathBuf::new(),
+            document: serde_json::json!({"token": "test-access", "expiry": "2099-01-01T00:00:00Z"}),
+        };
+        let tasks = session.list_all_tasks_at(&base).await.unwrap();
+        assert_eq!(
+            tasks
+                .iter()
+                .map(|task| (task.id.as_str(), task.task_list_id.as_str()))
+                .collect::<Vec<_>>(),
+            [("a", "second"), ("b", "second")]
+        );
+        server.abort();
+        let _ = server.await;
+    }
+
+    #[tokio::test]
     async fn completion_sends_patch_and_requires_confirmed_status() {
         use axum::{Json, Router, extract::State, http::HeaderMap, routing::patch};
         async fn respond(
@@ -495,6 +597,7 @@ mod tests {
             &state,
             &directory.path().join("missing-token.json"),
             "unknown",
+            "@default",
         )
         .await;
         assert!(matches!(result, Err(CompleteTaskFailure::NotFound)));
@@ -505,7 +608,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("events.json");
         let state = CalendarState::load(path.clone());
-        let tasks = [
+        let mut tasks: Vec<_> = [
             serde_json::json!({"id": "parent", "title": "상위"}),
             serde_json::json!({"id": "child", "parent": "parent", "title": "하위"}),
             serde_json::json!({"id": "other", "title": "유지"}),
@@ -513,11 +616,17 @@ mod tests {
         .iter()
         .map(CalendarTask::from_google)
         .collect();
+        let mut same_id_in_another_list = CalendarTask::from_google(
+            &serde_json::json!({"id": "parent", "title": "다른 목록 유지"}),
+        );
+        same_id_in_another_list.task_list_id = "another-list".to_owned();
+        tasks.push(same_id_in_another_list);
         state.apply_success(Vec::new(), Some(tasks), None).await;
-        state.remove_completed_task("parent").await;
+        state.remove_completed_task("parent", "@default").await;
         let restored = CalendarState::load(path).snapshot().await;
-        assert_eq!(restored.tasks.len(), 1);
+        assert_eq!(restored.tasks.len(), 2);
         assert_eq!(restored.tasks[0].id, "other");
+        assert_eq!(restored.tasks[1].task_list_id, "another-list");
     }
 
     #[tokio::test]

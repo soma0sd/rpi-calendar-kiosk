@@ -101,9 +101,10 @@ class Task:
     due_date: str | None        # "YYYY-MM-DD" 또는 None(무기한)
     notes: str = ""
     parent: str = ""            # 서브태스크면 부모 task id, 아니면 ""
+    task_list_id: str = "@default"
 
     @classmethod
-    def from_api_dict(cls, data: dict[str, Any]) -> Task:
+    def from_api_dict(cls, data: dict[str, Any], *, task_list_id: str = "@default") -> Task:
         """Google Tasks API v1 ``tasks.list`` 응답의 항목 하나를 변환.
 
         ``due`` 는 RFC3339(예 ``"2026-06-15T00:00:00.000Z"``): 날짜부분만 슬라이스.
@@ -118,6 +119,7 @@ class Task:
             due_date=due_date,
             notes=str(data.get("notes", "")),
             parent=str(data.get("parent", "")),
+            task_list_id=task_list_id,
         )
 
     def to_json_dict(self) -> dict[str, Any]:
@@ -131,4 +133,5 @@ class Task:
             due_date=data.get("due_date"),
             notes=data.get("notes", ""),
             parent=data.get("parent", ""),
+            task_list_id=data.get("task_list_id", "@default"),
         )

@@ -87,15 +87,15 @@ class CalendarState:
         with self._update_lock:
             self._fetch_once_locked()
 
-    def complete_task(self, task_id: str) -> None:
+    def complete_task(self, task_id: str, task_list_id: str = "@default") -> None:
         """동기화와 직렬화하여 완료한 할일이 이전 응답으로 되살아나지 않게 한다."""
         with self._update_lock:
             with self._lock:
-                if not any(t.id == task_id and not t.parent for t in self._tasks):
+                if not any(t.id == task_id and t.task_list_id == task_list_id and not t.parent for t in self._tasks):
                     raise LookupError("목록에 없는 할일입니다. 목록을 새로 확인해 주세요.")
-            GoogleTasksClient(load_credentials(token_path())).complete_task(task_id)
+            GoogleTasksClient(load_credentials(token_path())).complete_task(task_id, task_list_id)
             with self._lock:
-                self._tasks = [t for t in self._tasks if t.id != task_id and t.parent != task_id]
+                self._tasks = [t for t in self._tasks if t.task_list_id != task_list_id or (t.id != task_id and t.parent != task_id)]
                 events, tasks = list(self._events), list(self._tasks)
             try:
                 cache_mod.save(events, cache_events_path(), tasks=tasks)
@@ -310,8 +310,12 @@ def make_handler(
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 65536:
                     raise ValueError("invalid content length")
-                if not isinstance(json.loads(self.rfile.read(length)), dict):
+                payload = json.loads(self.rfile.read(length))
+                if not isinstance(payload, dict):
                     raise ValueError("invalid request body")
+                task_list_id = payload.get("task_list_id", "@default")
+                if not isinstance(task_list_id, str) or not task_list_id:
+                    raise ValueError("invalid task list")
             except (ValueError, UnicodeDecodeError):
                 self._serve_json({"error": "잘못된 완료 요청입니다."}, status=400)
                 return
@@ -324,7 +328,7 @@ def make_handler(
                 self._serve_json({"error": "키오스크 화면에서 다시 시도해 주세요."}, status=403)
                 return
             try:
-                state.complete_task(task_id)
+                state.complete_task(task_id, task_list_id)
             except LookupError as exc:
                 self._serve_json({"error": str(exc)}, status=404)
             except (ReauthRequired, HttpError) as exc:
@@ -334,7 +338,7 @@ def make_handler(
             except Exception:  # noqa: BLE001, 네트워크 오류 시 기존 목록 유지
                 self._serve_json({"error": "할일 완료 처리에 실패했습니다. 잠시 후 다시 시도해 주세요."}, status=502)
             else:
-                self._serve_json({"id": task_id, "status": "completed"})
+                self._serve_json({"id": task_id, "task_list_id": task_list_id, "status": "completed"})
 
         def _serve_file(self, path: Path) -> None:
             try:

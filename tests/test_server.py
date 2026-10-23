@@ -49,6 +49,28 @@ def test_complete_task_updates_cache_only_after_google_success(tmp_path, monkeyp
     assert client.complete_task.call_count == 2
 
 
+def test_completion_is_isolated_by_tasklist(tmp_path, monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from soma0sd_rpi_schedule import server as module
+
+    monkeypatch.setattr(module, "cache_events_path", lambda: tmp_path / "events.json")
+    monkeypatch.setattr(module, "load_credentials", lambda _: object())
+    client = MagicMock()
+    monkeypatch.setattr(module, "GoogleTasksClient", lambda _: client)
+    state = CalendarState()
+    state._override([], [
+        Task(id="same", title="다른 목록 유지", due_date=None, task_list_id="first"),
+        Task(id="same", title="완료 대상", due_date=None, task_list_id="second"),
+    ])
+    with pytest.raises(LookupError):
+        state.complete_task("same", "wrong-list")
+    client.complete_task.assert_not_called()
+    state.complete_task("same", "second")
+    client.complete_task.assert_called_once_with("same", "second")
+    assert [(t["id"], t["task_list_id"]) for t in state.snapshot()["tasks"]] == [("same", "first")]
+
+
 @pytest.mark.parametrize("headers,expected", [
     ({"Content-Type": "text/plain"}, 403),
     ({"Content-Type": "application/json", "Origin": "https://attacker.example"}, 403),

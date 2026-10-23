@@ -79,12 +79,12 @@ class GoogleTasksClient:
             cache_discovery=False,
         )
 
-    def list_tasks(self, tasklist_id: str = TASKS_TASKLIST_ID) -> list[Task]:
-        """미완료 task 목록. ``tasklist_id`` 가 비면 첫 번째 tasklist 를 자동 선택."""
-        if not tasklist_id:
-            tasklist_id = self._first_tasklist_id()
-            if tasklist_id is None:
-                return []
+    def list_tasks(self, tasklist_id: str | None = None) -> list[Task]:
+        """전체 목록의 미완료 할일 조회. 목록 ID를 지정하면 해당 목록만 조회."""
+        list_ids = [tasklist_id] if tasklist_id else self._tasklist_ids()
+        return [task for list_id in list_ids for task in self._list_tasks_in_list(list_id)]
+
+    def _list_tasks_in_list(self, tasklist_id: str) -> list[Task]:
         tasks: list[Task] = []
         page_token: str | None = None
         while True:
@@ -104,7 +104,7 @@ class GoogleTasksClient:
                     # showCompleted=False 와 별개로 이중 방어.
                     continue
                 try:
-                    tasks.append(Task.from_api_dict(item))
+                    tasks.append(Task.from_api_dict(item, task_list_id=tasklist_id))
                 except (KeyError, ValueError):
                     # 형식이 어긋난 단일 항목은 건너뛴다 (events 와 동일 관례).
                     continue
@@ -126,6 +126,15 @@ class GoogleTasksClient:
             raise RuntimeError("Google에서 할일 완료를 확인하지 못했습니다.")
 
     def _first_tasklist_id(self) -> str | None:
-        response = self._service.tasklists().list(maxResults=1).execute()
-        items = response.get("items", [])
-        return items[0]["id"] if items else None
+        ids = self._tasklist_ids()
+        return ids[0] if ids else None
+
+    def _tasklist_ids(self) -> list[str]:
+        ids: list[str] = []
+        page_token = None
+        while True:
+            response = self._service.tasklists().list(maxResults=100, pageToken=page_token).execute()
+            ids.extend(item["id"] for item in response.get("items", []) if item.get("id"))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return ids

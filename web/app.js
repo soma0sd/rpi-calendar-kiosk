@@ -626,6 +626,14 @@ function closeEventDetail() {
   document.getElementById("event-detail").hidden = true;
 }
 
+function taskListId(task) {
+  return task.task_list_id || "@default";
+}
+
+function sameTask(a, b) {
+  return a.id === b.id && taskListId(a) === taskListId(b);
+}
+
 function openTaskDetail(task) {
   selectedTask = task;
   hideCalendarImmediately();
@@ -659,15 +667,15 @@ async function completeSelectedTask() {
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: "{}",
+      body: JSON.stringify({ task_list_id: taskListId(task) }),
       signal: controller.signal,
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-    if (result.status !== "completed" || result.id !== task.id) throw new Error("완료 응답을 확인하지 못했습니다.");
+    if (result.status !== "completed" || !sameTask(result, task)) throw new Error("완료 응답을 확인하지 못했습니다.");
     // 완료 전에 시작한 폴링 응답이 목록을 이전 상태로 되돌리지 않도록 무효화한다.
     stateRevision += 1;
-    renderAll({ ...stateCache, tasks: (stateCache.tasks || []).filter(t => t.id !== task.id && t.parent !== task.id) });
+    renderAll({ ...stateCache, tasks: (stateCache.tasks || []).filter(t => taskListId(t) !== taskListId(task) || (t.id !== task.id && t.parent !== task.id)) });
     completed = true;
   } catch (e) {
     error.textContent = e.name === "AbortError" ? "응답이 지연되고 있습니다. 목록을 확인한 뒤 다시 시도해 주세요." : (e.message || String(e));
@@ -889,13 +897,13 @@ function getCalendarSignature(state) {
   return JSON.stringify({
     last_sync: state.last_sync,
     events: (state.events || []).map(e => [e.id, e.summary, e.start_dt, e.end_dt, e.location, e.description]),
-    tasks: (state.tasks || []).map(t => [t.id, t.title, t.due_date, t.notes, t.parent]),
+    tasks: (state.tasks || []).map(t => [t.id, taskListId(t), t.title, t.due_date, t.notes, t.parent]),
   });
 }
 
 function renderAll(state) {
   stateCache = state;
-  if (selectedTask && !taskCompletionPending && !(state.tasks || []).some(t => t.id === selectedTask.id)) closeEventDetail();
+  if (selectedTask && !taskCompletionPending && !(state.tasks || []).some(t => sameTask(t, selectedTask))) closeEventDetail();
   renderBanner(state);
   renderSystemMonitors(state);
   document.getElementById("today-date").textContent = formatTodayHeading();
